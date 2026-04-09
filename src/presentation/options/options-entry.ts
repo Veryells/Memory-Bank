@@ -8,7 +8,6 @@ import { getChromeApi } from "../../infrastructure/browser/getChromeApi.js";
 
 const MEMORIES_PER_PAGE = 12;
 const APPLY_MODE_ORDER: ApplyMode[] = [
-  ApplyMode.SuggestOnly,
   ApplyMode.AskBeforeApply,
   ApplyMode.AutoApply,
 ];
@@ -33,9 +32,18 @@ function requireElement<T extends HTMLElement>(id: string): T {
 }
 
 function cycleApplyMode(current: ApplyMode): ApplyMode {
-  const currentIndex = APPLY_MODE_ORDER.indexOf(current);
+  const normalizedCurrent = current === ApplyMode.SuggestOnly
+    ? ApplyMode.AskBeforeApply
+    : current;
+  const currentIndex = APPLY_MODE_ORDER.indexOf(normalizedCurrent);
   const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % APPLY_MODE_ORDER.length;
   return APPLY_MODE_ORDER[nextIndex]!;
+}
+
+function formatApplyMode(mode: ApplyMode): ApplyMode {
+  return mode === ApplyMode.SuggestOnly
+    ? ApplyMode.AskBeforeApply
+    : mode;
 }
 
 function answerPayloadToEditorValue(
@@ -132,13 +140,13 @@ async function main(): Promise<void> {
 
   const renderSettings = (): void => {
     statusElement.textContent = settings.isEnabled
-      ? `MemoryBank is enabled. Mode: ${settings.defaultApplyMode}.`
-      : `MemoryBank is disabled. Mode: ${settings.defaultApplyMode}.`;
+      ? `MemoryBank is enabled. Mode: ${formatApplyMode(settings.defaultApplyMode)}.`
+      : `MemoryBank is disabled. Mode: ${formatApplyMode(settings.defaultApplyMode)}.`;
 
     settingsButton.textContent = settings.isEnabled
       ? "Disable MemoryBank"
       : "Enable MemoryBank";
-    modeButton.textContent = `Cycle Mode (${settings.defaultApplyMode})`;
+    modeButton.textContent = `Cycle Mode (${formatApplyMode(settings.defaultApplyMode)})`;
   };
 
   const renderMemoryList = (): void => {

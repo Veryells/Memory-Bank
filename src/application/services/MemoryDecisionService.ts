@@ -18,6 +18,10 @@ export interface MemoryDecision {
 
 export class MemoryDecisionService {
   decide(match: MatchResult, settings: EffectivePageSettings): MemoryDecision {
+    const applyMode = settings.applyMode === ApplyMode.SuggestOnly
+      ? ApplyMode.AskBeforeApply
+      : settings.applyMode;
+
     if (!settings.isEnabled) {
       return {
         action: "none",
@@ -53,16 +57,11 @@ export class MemoryDecisionService {
       };
     }
 
-    switch (settings.applyMode) {
+    switch (applyMode) {
       case ApplyMode.Disabled:
         return {
           action: "none",
           reason: "Apply mode is disabled.",
-        };
-      case ApplyMode.SuggestOnly:
-        return {
-          action: "suggest",
-          reason: "SuggestOnly mode always surfaces a suggestion.",
         };
       case ApplyMode.AskBeforeApply:
         return {

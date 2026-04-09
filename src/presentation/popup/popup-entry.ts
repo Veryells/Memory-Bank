@@ -6,7 +6,6 @@ import type { SiteRule } from "../../domain/models/SiteRule.js";
 import type { UserSettings } from "../../domain/models/UserSettings.js";
 
 const APPLY_MODE_ORDER: ApplyMode[] = [
-  ApplyMode.SuggestOnly,
   ApplyMode.AskBeforeApply,
   ApplyMode.AutoApply,
 ];
@@ -70,9 +69,18 @@ function getHostNameFromTab(tab?: ChromeTabLike): string | null {
 }
 
 function cycleApplyMode(current: ApplyMode): ApplyMode {
-  const currentIndex = APPLY_MODE_ORDER.indexOf(current);
+  const normalizedCurrent = current === ApplyMode.SuggestOnly
+    ? ApplyMode.AskBeforeApply
+    : current;
+  const currentIndex = APPLY_MODE_ORDER.indexOf(normalizedCurrent);
   const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % APPLY_MODE_ORDER.length;
   return APPLY_MODE_ORDER[nextIndex]!;
+}
+
+function formatApplyMode(mode: ApplyMode): ApplyMode {
+  return mode === ApplyMode.SuggestOnly
+    ? ApplyMode.AskBeforeApply
+    : mode;
 }
 
 function getSiteEnabled(settings: UserSettings, siteRule: SiteRule | null): boolean {
@@ -115,14 +123,14 @@ async function main(): Promise<void> {
 
     statusElement.textContent = [
       state.settings.isEnabled ? "MemoryBank is enabled." : "MemoryBank is disabled.",
-      `Mode: ${state.settings.defaultApplyMode}.`,
+      `Mode: ${formatApplyMode(state.settings.defaultApplyMode)}.`,
       siteSummary,
     ].join(" ");
 
     globalToggleButton.textContent = state.settings.isEnabled
       ? "Disable MemoryBank"
       : "Enable MemoryBank";
-    modeButton.textContent = `Cycle Mode (${state.settings.defaultApplyMode})`;
+    modeButton.textContent = `Cycle Mode (${formatApplyMode(state.settings.defaultApplyMode)})`;
 
     if (state.hostName) {
       siteButton.disabled = false;

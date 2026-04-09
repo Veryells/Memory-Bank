@@ -21,7 +21,9 @@ export class SettingsResolutionService {
 
     const globallyEnabled = userSettings.isEnabled;
     const isEnabled = globallyEnabled && (matchingRule?.isEnabled ?? true);
-    const applyMode = matchingRule?.overrideApplyMode ?? userSettings.defaultApplyMode;
+    const applyMode = this.normalizeApplyMode(
+      matchingRule?.overrideApplyMode ?? userSettings.defaultApplyMode,
+    );
 
     return {
       hostName,
@@ -36,5 +38,11 @@ export class SettingsResolutionService {
 
   private hostsMatch(ruleHostName: string, currentHostName: string): boolean {
     return currentHostName === ruleHostName || currentHostName.endsWith(`.${ruleHostName}`);
+  }
+
+  private normalizeApplyMode(applyMode: ApplyMode): ApplyMode {
+    return applyMode === ApplyMode.SuggestOnly
+      ? ApplyMode.AskBeforeApply
+      : applyMode;
   }
 }

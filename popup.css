@@ -1,0 +1,45 @@
+body {
+  margin: 0;
+  min-width: 280px;
+  font: 14px/1.4 "Segoe UI", Arial, sans-serif;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.popup-shell {
+  padding: 16px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.status {
+  margin: 0 0 12px;
+  color: #334155;
+}
+
+.button-stack {
+  display: grid;
+  gap: 8px;
+}
+
+button {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  color: #0f172a;
+  padding: 10px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #eef2ff;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

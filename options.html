@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MemoryBank Dashboard</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="dashboard-shell">
+      <section class="panel">
+        <h1>MemoryBank Dashboard</h1>
+        <p id="dashboard-status" class="status">Loading...</p>
+        <div class="button-row">
+          <button id="toggle-settings" type="button">Toggle</button>
+          <button id="cycle-settings-mode" type="button">Cycle Mode</button>
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <aside class="panel">
+          <label class="field">
+            <span>Search Memories</span>
+            <input id="memory-search" type="search" placeholder="Search by question" />
+          </label>
+          <div id="memory-list" class="memory-list"></div>
+          <p id="memory-empty" class="empty-state" hidden>No memories match your search.</p>
+        </aside>
+
+        <section class="panel">
+          <form id="memory-form" class="editor-form">
+            <label class="field">
+              <span>Question</span>
+              <input id="memory-question" type="text" />
+            </label>
+
+            <label class="field">
+              <span>Answer Type</span>
+              <select id="memory-answer-type">
+                <option value="Text">Text</option>
+                <option value="Boolean">Boolean</option>
+                <option value="SelectChoice">Select Choice</option>
+                <option value="MultiSelect">Multi Select</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Answer</span>
+              <textarea id="memory-answer-text" rows="8"></textarea>
+            </label>
+
+            <label class="field checkbox-field" hidden>
+              <input id="memory-answer-boolean" type="checkbox" />
+              <span>Boolean Answer</span>
+            </label>
+
+            <label class="field checkbox-field">
+              <input id="memory-enabled" type="checkbox" />
+              <span>Memory Enabled</span>
+            </label>
+
+            <label class="field">
+              <span>Hosts</span>
+              <input id="memory-hosts" type="text" placeholder="example.com, jobs.example.com" />
+            </label>
+
+            <label class="field">
+              <span>Tags</span>
+              <input id="memory-tags" type="text" placeholder="interview, profile" />
+            </label>
+
+            <div class="button-row">
+              <button id="save-memory" type="submit">Save Memory</button>
+              <button id="delete-memory" type="button">Delete Memory</button>
+            </div>
+          </form>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="dist/presentation/options/options-entry.js"></script>
+  </body>
+</html>

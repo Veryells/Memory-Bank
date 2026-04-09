@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "MemoryBank",
+  "version": "0.1.0",
+  "description": "A lightweight, local-first form memory extension.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "dist/background/background-entry.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "MemoryBank",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "dist/*.js",
+        "dist/*/*.js",
+        "dist/*/*/*.js",
+        "dist/*/*/*/*.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

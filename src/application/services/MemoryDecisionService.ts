@@ -76,16 +76,9 @@ export class MemoryDecisionService {
           };
         }
 
-        if (match.confidenceScore >= settings.autoApplyConfidenceThreshold) {
-          return {
-            action: "autoApply",
-            reason: "Match confidence cleared the auto-apply threshold.",
-          };
-        }
-
         return {
-          action: "prompt",
-          reason: "AutoApply mode fell back to a prompt because confidence was too low.",
+          action: "autoApply",
+          reason: "AutoApply mode applies the single matched answer.",
         };
       default:
         return {

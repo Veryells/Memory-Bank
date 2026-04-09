@@ -1,5 +1,9 @@
 import { FieldType } from "../../domain/enums/FieldType.js";
 import type { DetectedFieldDescriptor } from "../../domain/models/DetectedFieldDescriptor.js";
+import {
+  hasDateLikeSignal,
+  isDateLikeInputType,
+} from "../../shared/utils/dateFieldHeuristics.js";
 import { DomQuestionLocatorService } from "./DomQuestionLocatorService.js";
 import type { ScannedFieldBinding, SupportedFormElement } from "./types.js";
 
@@ -33,7 +37,13 @@ export class DomScannerService {
         continue;
       }
 
-      scannedBindings.push(this.createBinding(fieldType, [element], hostName));
+      const binding = this.createBinding(fieldType, [element], hostName);
+
+      if (this.isDateLikeBinding(binding)) {
+        continue;
+      }
+
+      scannedBindings.push(binding);
     }
 
     for (const group of radioGroups.values()) {
@@ -41,7 +51,13 @@ export class DomScannerService {
         continue;
       }
 
-      scannedBindings.push(this.createBinding(FieldType.Radio, group, hostName));
+      const binding = this.createBinding(FieldType.Radio, group, hostName);
+
+      if (this.isDateLikeBinding(binding)) {
+        continue;
+      }
+
+      scannedBindings.push(binding);
     }
 
     return scannedBindings;
@@ -85,11 +101,21 @@ export class DomScannerService {
     }
 
     if (element instanceof HTMLInputElement) {
-      if (element.disabled || element.type === "hidden") {
+      if (
+        element.disabled
+        || element.type === "hidden"
+        || isDateLikeInputType(element.type)
+      ) {
         return FieldType.Unknown;
       }
 
-      if (element.type === "search") {
+      if (
+        element.type === "search"
+        || element.classList.contains("select2-search__field")
+        || element.classList.contains("select2-input")
+        || element.closest(".select2-container")
+        || element.closest(".select2-drop")
+      ) {
         return FieldType.Unknown;
       }
 
@@ -116,6 +142,7 @@ export class DomScannerService {
         case "image":
         case "range":
         case "color":
+        case "time":
           return FieldType.Unknown;
         default:
           return FieldType.Text;
@@ -123,6 +150,29 @@ export class DomScannerService {
     }
 
     return FieldType.Unknown;
+  }
+
+  private isDateLikeBinding(binding: ScannedFieldBinding): boolean {
+    const descriptor = binding.descriptor;
+    const elementSignals = binding.elements.flatMap((element) => [
+      element.getAttribute("autocomplete"),
+      element.getAttribute("aria-label"),
+      element.getAttribute("data-automation-id"),
+      element.getAttribute("name"),
+      element.id,
+      element.getAttribute("placeholder"),
+      element.getAttribute("title"),
+    ]);
+
+    return hasDateLikeSignal(
+      [
+        descriptor.questionText,
+        descriptor.placeholderText,
+        descriptor.sectionText,
+        ...elementSignals,
+      ],
+      descriptor.optionTexts,
+    );
   }
 
   private getRadioGroupKey(element: HTMLInputElement): string {
@@ -157,7 +207,24 @@ export class DomScannerService {
       return `placeholder:${placeholder.trim().toLowerCase()}`;
     }
 
+    const greenhouseQuestion = this.getGreenhouseQuestionClass(element);
+
+    if (greenhouseQuestion) {
+      return `greenhouse:${greenhouseQuestion}`;
+    }
+
     return `path:${this.buildDomPath(element)}`;
+  }
+
+  private getGreenhouseQuestionClass(element: SupportedFormElement): string | undefined {
+    const questionContainer = element.closest("[class*='question_']");
+
+    if (!(questionContainer instanceof HTMLElement)) {
+      return undefined;
+    }
+
+    return Array.from(questionContainer.classList)
+      .find((className) => className.startsWith("question_"));
   }
 
   private buildDomPath(element: Element): string {

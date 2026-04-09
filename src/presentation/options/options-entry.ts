@@ -102,6 +102,17 @@ function editorToAnswerPayload(answerType: AnswerType, textValue: string, boolea
   }
 }
 
+function sortMemoriesForDashboard(memories: MemoryEntry[]): MemoryEntry[] {
+  return [...memories].sort((left, right) =>
+    getSortableTimestamp(right.updatedAt) - getSortableTimestamp(left.updatedAt),
+  );
+}
+
+function getSortableTimestamp(value: string): number {
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
 async function main(): Promise<void> {
   const messaging = new ChromeMessagingService(getChromeApi());
 
@@ -128,10 +139,13 @@ async function main(): Promise<void> {
   const deleteButton = requireElement<HTMLButtonElement>("delete-memory");
 
   let settings: UserSettings = (await messaging.send("loadSettings", {})).settings;
-  let memories: MemoryEntry[] = (await messaging.send("fetchMemories", { query: "" })).memories;
+  let memories: MemoryEntry[] = sortMemoriesForDashboard(
+    (await messaging.send("fetchMemories", { query: "" })).memories,
+  );
   let selectedMemoryId: string | null = memories[0]?.id ?? null;
   let currentPage = 1;
   let draft: MemoryDraft | null = null;
+  let hasUnsavedEditorChanges = false;
 
   const getFilteredMemories = (): MemoryEntry[] =>
     memories.filter((memory) =>
@@ -195,6 +209,7 @@ async function main(): Promise<void> {
       deleteButton.disabled = false;
       deleteButton.textContent = "Cancel";
       updateAnswerInputs();
+      hasUnsavedEditorChanges = false;
       return;
     }
 
@@ -210,6 +225,7 @@ async function main(): Promise<void> {
       deleteButton.disabled = true;
       deleteButton.textContent = "Delete Memory";
       updateAnswerInputs();
+      hasUnsavedEditorChanges = false;
       return;
     }
 
@@ -228,6 +244,7 @@ async function main(): Promise<void> {
     deleteButton.disabled = false;
     deleteButton.textContent = "Delete Memory";
     updateAnswerInputs();
+    hasUnsavedEditorChanges = false;
   };
 
   const updateAnswerInputs = (): void => {
@@ -235,6 +252,43 @@ async function main(): Promise<void> {
     answerText.hidden = isBoolean;
     answerBoolean.parentElement?.toggleAttribute("hidden", !isBoolean);
   };
+
+  const refreshMemoriesFromStorage = async (): Promise<void> => {
+    if (draft || hasUnsavedEditorChanges) {
+      return;
+    }
+
+    const previousMemoryIds = new Set(memories.map((memory) => memory.id));
+    const previousSelection = selectedMemoryId;
+    memories = sortMemoriesForDashboard(
+      (await messaging.send("fetchMemories", { query: "" })).memories,
+    );
+
+    const newestNewMemory = memories.find((memory) => !previousMemoryIds.has(memory.id));
+
+    if (newestNewMemory) {
+      selectedMemoryId = newestNewMemory.id;
+      currentPage = 1;
+    } else if (previousSelection && memories.some((memory) => memory.id === previousSelection)) {
+      selectedMemoryId = previousSelection;
+    } else {
+      selectedMemoryId = memories[0]?.id ?? null;
+      currentPage = 1;
+    }
+
+    renderMemoryList();
+    renderEditor();
+  };
+
+  window.addEventListener("focus", () => {
+    void refreshMemoriesFromStorage();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void refreshMemoriesFromStorage();
+    }
+  });
 
   settingsButton.addEventListener("click", async () => {
     settings = (
@@ -295,6 +349,14 @@ async function main(): Promise<void> {
     updateAnswerInputs();
   });
 
+  form.addEventListener("input", () => {
+    hasUnsavedEditorChanges = true;
+  });
+
+  form.addEventListener("change", () => {
+    hasUnsavedEditorChanges = true;
+  });
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
@@ -323,7 +385,10 @@ async function main(): Promise<void> {
       });
 
       const savedMemory = response.memory;
-      memories = [savedMemory, ...memories.filter((memory) => memory.id !== savedMemory.id)];
+      memories = sortMemoriesForDashboard([
+        savedMemory,
+        ...memories.filter((memory) => memory.id !== savedMemory.id),
+      ]);
       draft = null;
       selectedMemoryId = savedMemory.id;
       currentPage = 1;
@@ -350,8 +415,10 @@ async function main(): Promise<void> {
       memory: updatedMemory,
     });
 
-    memories = memories.map((memory) =>
-      memory.id === response.memory.id ? response.memory : memory,
+    memories = sortMemoriesForDashboard(
+      memories.map((memory) =>
+        memory.id === response.memory.id ? response.memory : memory,
+      ),
     );
     renderMemoryList();
     renderEditor();

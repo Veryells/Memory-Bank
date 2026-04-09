@@ -20,6 +20,7 @@ import type {
   BackgroundResponse,
   BackgroundResponseMap,
 } from "../../shared/types/messages.js";
+import { isDateLikeText } from "../../shared/utils/dateFieldHeuristics.js";
 
 export interface BackgroundMessageRouterDependencies {
   memoryRepository: MemoryRepository;
@@ -178,6 +179,10 @@ export class BackgroundMessageRouter {
 
     if (!normalizedQuestionText) {
       throw new Error("Cannot update a memory without question text.");
+    }
+
+    if (isDateLikeText(memory.questionText)) {
+      throw new Error("Date fields are ignored and are not saved as memories.");
     }
 
     const answerType = this.saveService.inferAnswerType(memory.answer);

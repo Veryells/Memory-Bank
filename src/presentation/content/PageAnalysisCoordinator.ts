@@ -12,20 +12,39 @@ export class PageAnalysisCoordinator {
     const bindings = this.scannerService.scan(root);
 
     const results = await Promise.allSettled(
-      bindings.map(async (binding) => ({
-        binding,
-        analysis: await this.backgroundMessageClient.send("analyzeField", {
-          field: binding.descriptor,
-        }),
-      })),
+      bindings.map(async (binding) => {
+        const sanitizedDescriptor = {
+          ...binding.descriptor,
+          questionText: binding.descriptor.questionText.trim() || "Untitled field",
+          ...(binding.descriptor.optionTexts
+            ? { optionTexts: binding.descriptor.optionTexts.slice(0, 100) }
+            : {}),
+        };
+
+        return {
+          binding: {
+            ...binding,
+            descriptor: sanitizedDescriptor,
+          },
+          analysis: await this.backgroundMessageClient.send("analyzeField", {
+            field: sanitizedDescriptor,
+          }),
+        };
+      }),
     );
 
-    return results.flatMap((result) => {
+    return results.flatMap((result, index) => {
       if (result.status === "fulfilled") {
         return [result.value];
       }
 
-      console.warn("MemoryBank could not analyze one field", result.reason);
+      console.warn(
+        "MemoryBank could not analyze one field",
+        {
+          descriptor: bindings[index]?.descriptor,
+          reason: result.reason,
+        },
+      );
       return [];
     });
   }

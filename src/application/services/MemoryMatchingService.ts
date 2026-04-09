@@ -18,7 +18,13 @@ export class MemoryMatchingService {
     const candidates = memories
       .filter((memory) => memory.enabled)
       .filter((memory) => this.hasUsableAnswer(memory.answer))
-      .map((memory) => this.scoreCandidate(signature, memory))
+      .map((memory) => {
+        try {
+          return this.scoreCandidate(signature, memory);
+        } catch {
+          return null;
+        }
+      })
       .filter((candidate): candidate is ScoredCandidate => candidate !== null)
       .sort((left, right) => right.score - left.score);
 
@@ -232,7 +238,11 @@ export class MemoryMatchingService {
     return Math.round(score * 1000) / 1000;
   }
 
-  private hasUsableAnswer(answer: MemoryEntry["answer"]): boolean {
+  private hasUsableAnswer(answer: MemoryEntry["answer"] | undefined): boolean {
+    if (!answer) {
+      return false;
+    }
+
     if (typeof answer.booleanValue === "boolean") {
       return true;
     }

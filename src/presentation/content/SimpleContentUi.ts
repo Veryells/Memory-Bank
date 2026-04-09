@@ -86,14 +86,13 @@ export class SimpleContentUi {
     );
 
     this.mountOverlay(
-      request.field.binding.descriptor.fieldId,
-      request.field.binding.primaryElement,
+      request.field,
       overlay,
     );
   }
 
   private async showSaveOverlay(request: SaveCandidateRequest): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
+    return new Promise<boolean>((resolve, reject) => {
       const overlay = this.createOverlay(
         request.field,
         "Save this answer?",
@@ -102,7 +101,15 @@ export class SimpleContentUi {
             label: "Save",
             emphasis: true,
             onClick: async () => {
-              resolve(true);
+              try {
+                await request.save();
+                this.showNoticeOverlay(request.field, "Answer saved.");
+                resolve(false);
+              } catch (error) {
+                console.error("MemoryBank could not save answer", error);
+                this.showNoticeOverlay(request.field, "Could not save answer.");
+                reject(error);
+              }
             },
           },
           {
@@ -115,8 +122,7 @@ export class SimpleContentUi {
       );
 
       this.mountOverlay(
-        request.field.binding.descriptor.fieldId,
-        request.field.binding.primaryElement,
+        request.field,
         overlay,
       );
     });
@@ -126,18 +132,12 @@ export class SimpleContentUi {
     const overlay = this.createOverlay(
       field,
       message,
-      [
-        {
-          label: "Close",
-          onClick: () => undefined,
-        },
-      ],
+      [],
       true,
     );
 
     this.mountOverlay(
-      field.binding.descriptor.fieldId,
-      field.binding.primaryElement,
+      field,
       overlay,
       2500,
     );
@@ -176,37 +176,103 @@ export class SimpleContentUi {
       button.addEventListener("click", () => {
         void Promise.resolve(buttonSpec.onClick()).finally(() => {
           container.remove();
-          this.overlays.delete(field.binding.descriptor.fieldId);
+          if (this.overlays.get(field.binding.descriptor.fieldId) === container) {
+            this.overlays.delete(field.binding.descriptor.fieldId);
+          }
         });
       });
       actions.appendChild(button);
     }
 
-    container.appendChild(actions);
+    if (buttons.length > 0) {
+      container.appendChild(actions);
+    }
+
     return container;
   }
 
   private mountOverlay(
-    fieldId: string,
-    anchor: HTMLElement,
+    field: AnalyzedContentField,
     overlay: HTMLElement,
     autoCloseMs?: number,
   ): void {
+    const fieldId = field.binding.descriptor.fieldId;
     this.overlays.get(fieldId)?.remove();
     this.overlays.set(fieldId, overlay);
 
-    if (anchor.parentElement) {
-      anchor.insertAdjacentElement("afterend", overlay);
-    } else {
-      document.body.appendChild(overlay);
-    }
+    document.body.appendChild(overlay);
+    this.positionOverlay(field.binding.primaryElement, overlay);
 
     if (autoCloseMs) {
       window.setTimeout(() => {
         overlay.remove();
-        this.overlays.delete(fieldId);
+        if (this.overlays.get(fieldId) === overlay) {
+          this.overlays.delete(fieldId);
+        }
       }, autoCloseMs);
     }
+  }
+
+  private positionOverlay(anchor: HTMLElement, overlay: HTMLElement): void {
+    const visualAnchor = this.resolveVisualAnchor(anchor);
+    const rect = visualAnchor.getBoundingClientRect();
+    const fallbackRect = anchor.getBoundingClientRect();
+    const targetRect = rect.width > 0 || rect.height > 0 ? rect : fallbackRect;
+
+    overlay.style.position = "fixed";
+    overlay.style.top = `${Math.max(8, targetRect.bottom + 6)}px`;
+    overlay.style.left = `${Math.max(8, targetRect.left)}px`;
+    overlay.style.maxWidth = `${Math.max(260, Math.min(420, targetRect.width || 360))}px`;
+  }
+
+  private resolveVisualAnchor(anchor: HTMLElement): HTMLElement {
+    if (anchor instanceof HTMLSelectElement) {
+      const select2Container = this.getSelect2Container(anchor);
+
+      if (select2Container) {
+        return select2Container;
+      }
+    }
+
+    const fieldContainer = anchor.closest(
+      [
+        "[class*='question_']",
+        ".application-question",
+        ".field",
+        ".form-group",
+      ].join(","),
+    );
+
+    return fieldContainer instanceof HTMLElement ? fieldContainer : anchor;
+  }
+
+  private getSelect2Container(select: HTMLSelectElement): HTMLElement | undefined {
+    const candidates: Array<Element | null> = [
+      select.nextElementSibling,
+      select.previousElementSibling,
+      select.id ? select.ownerDocument.getElementById(`s2id_${select.id}`) : null,
+    ];
+
+    for (const candidate of candidates) {
+      if (
+        candidate instanceof HTMLElement
+        && (
+          candidate.classList.contains("select2")
+          || candidate.classList.contains("select2-container")
+        )
+      ) {
+        return candidate;
+      }
+    }
+
+    if (!select.id) {
+      return undefined;
+    }
+
+    const renderedById = select.ownerDocument.getElementById(`select2-${select.id}-container`);
+    const container = renderedById?.closest(".select2, .select2-container");
+
+    return container instanceof HTMLElement ? container : undefined;
   }
 
   private ensureStyles(): void {
@@ -221,7 +287,7 @@ export class SimpleContentUi {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        margin: 6px 0 0;
+        margin: 0;
         padding: 8px 10px;
         border: 1px solid #cbd5e1;
         border-radius: 8px;
@@ -230,7 +296,7 @@ export class SimpleContentUi {
         font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
         max-width: 360px;
-        position: relative;
+        position: fixed;
         z-index: 2147483646;
       }
       .memorybank-inline-compact {

@@ -11,6 +11,21 @@ interface ChoiceFingerprint {
   canonicalText: string;
 }
 
+interface JQueryCollectionLike {
+  val?(value: string): unknown;
+  trigger?(eventName: string): unknown;
+  select2?(command: string, value: string): unknown;
+}
+
+interface JQueryLike {
+  (element: HTMLElement): JQueryCollectionLike;
+}
+
+interface WindowWithJQuery extends Window {
+  $?: JQueryLike;
+  jQuery?: JQueryLike;
+}
+
 export class DomFieldWriterService {
   private static readonly usStateAliases = new Map<string, string>([
     ["alabama", "al"],
@@ -112,7 +127,10 @@ export class DomFieldWriterService {
       }
 
       binding.primaryElement.focus();
-      binding.primaryElement.value = targetValue;
+      binding.primaryElement.click();
+      this.setNativeValue(binding.primaryElement, targetValue);
+      this.dispatchInputLikeEvents(binding.primaryElement);
+      this.tryClickVisibleChoice(binding.primaryElement.ownerDocument, targetValue);
       return true;
     }
 
@@ -149,8 +167,25 @@ export class DomFieldWriterService {
       return false;
     }
 
-    select.value = matchingOption.value;
+    const select2Container = this.findSelect2Container(select);
+
+    if (select2Container) {
+      this.writeEnhancedSelectValue(select, matchingOption, select2Container);
+      return true;
+    }
+
+    this.selectNativeOption(select, matchingOption);
+    this.syncJQuerySelectValue(select, matchingOption.value);
+    this.dispatchInputLikeEvents(select);
     return true;
+  }
+
+  private selectNativeOption(select: HTMLSelectElement, selectedOption: HTMLOptionElement): void {
+    for (const option of Array.from(select.options)) {
+      option.selected = option === selectedOption;
+    }
+
+    select.value = selectedOption.value;
   }
 
   private writeCheckboxValue(binding: ScannedFieldBinding, answer: AnswerPayload): boolean {
@@ -228,7 +263,9 @@ export class DomFieldWriterService {
       }))
       .sort((left, right) => right.score - left.score)[0];
 
-    return bestMatch && bestMatch.score >= 0.6 ? bestMatch.option : undefined;
+    return bestMatch && bestMatch.score >= this.getMinimumChoiceMatchScore(targetChoice)
+      ? bestMatch.option
+      : undefined;
   }
 
   private toOptionChoice(option: HTMLOptionElement): ChoiceFingerprint {
@@ -272,6 +309,17 @@ export class DomFieldWriterService {
       return 0.95;
     }
 
+    if (
+      this.countTokens(target.normalizedText) >= 3
+      && this.countTokens(option.normalizedText) >= 3
+      && (
+        option.normalizedText.includes(target.normalizedText)
+        || target.normalizedText.includes(option.normalizedText)
+      )
+    ) {
+      return 0.92;
+    }
+
     return Math.max(
       this.getTokenOverlap(target.normalizedText, option.normalizedText),
       this.getTokenOverlap(target.normalizedText, option.normalizedValue),
@@ -291,6 +339,14 @@ export class DomFieldWriterService {
     const denominator = Math.max(leftTokens.size, rightTokens.size);
 
     return denominator === 0 ? 0 : overlap / denominator;
+  }
+
+  private getMinimumChoiceMatchScore(targetChoice: ChoiceFingerprint): number {
+    return this.countTokens(targetChoice.normalizedText) >= 3 ? 0.9 : 0.6;
+  }
+
+  private countTokens(value: string): number {
+    return value.split(" ").filter(Boolean).length;
   }
 
   private normalizeChoice(value: string): string {
@@ -389,5 +445,268 @@ export class DomFieldWriterService {
     }
 
     element.click();
+  }
+
+  private setNativeValue(
+    element: HTMLInputElement | HTMLTextAreaElement,
+    value: string,
+  ): void {
+    const prototype = element instanceof HTMLInputElement
+      ? HTMLInputElement.prototype
+      : HTMLTextAreaElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+
+    if (descriptor?.set) {
+      descriptor.set.call(element, value);
+      return;
+    }
+
+    element.value = value;
+  }
+
+  private writeEnhancedSelectValue(
+    select: HTMLSelectElement,
+    option: HTMLOptionElement,
+    container: HTMLElement,
+  ): void {
+    const optionLabel = option.text.trim() || option.value;
+    const targets = [optionLabel, option.value].filter(Boolean);
+
+    if (targets.length === 0) {
+      return;
+    }
+
+    this.selectNativeOption(select, option);
+    this.syncJQuerySelectValue(select, option.value);
+    this.dispatchInputLikeEvents(select);
+    this.openEnhancedSelect(container);
+
+    for (const delay of [0, 100, 250, 500]) {
+      window.setTimeout(() => {
+        if (this.clickVisibleChoice(select.ownerDocument, targets)) {
+          return;
+        }
+
+        for (const target of targets) {
+          this.primeSearchInput(select.ownerDocument, target);
+
+          if (this.clickVisibleChoice(select.ownerDocument, targets)) {
+            return;
+          }
+        }
+      }, delay);
+    }
+
+    window.setTimeout(() => {
+      if (select.value === option.value) {
+        return;
+      }
+
+      this.selectNativeOption(select, option);
+      this.syncJQuerySelectValue(select, option.value);
+      this.dispatchInputLikeEvents(select);
+    }, 700);
+  }
+
+  private openEnhancedSelect(container: HTMLElement): void {
+    const selection = container.querySelector(
+      ".select2-selection, .select2-choice, .select2-selection__rendered, .select2-chosen",
+    );
+    const target = selection instanceof HTMLElement ? selection : container;
+
+    target.focus();
+    this.activateElement(target);
+  }
+
+  private syncJQuerySelectValue(select: HTMLSelectElement, value: string): void {
+    const collection = this.getJQueryCollection(select);
+
+    if (!collection) {
+      return;
+    }
+
+    try {
+      collection.val?.(value);
+      collection.trigger?.("change");
+    } catch {
+      // Some sites expose jQuery but not a normal val/trigger pair.
+    }
+
+    try {
+      collection.select2?.("val", value);
+      collection.trigger?.("change");
+    } catch {
+      // Select2 v4 removed select2("val"); native val/change above is enough there.
+    }
+  }
+
+  private getJQueryCollection(select: HTMLSelectElement): JQueryCollectionLike | undefined {
+    const view = select.ownerDocument.defaultView as WindowWithJQuery | null;
+    const jQuery = view?.jQuery ?? view?.$;
+
+    if (!jQuery) {
+      return undefined;
+    }
+
+    try {
+      return jQuery(select);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private findSelect2RenderedElement(select: HTMLSelectElement): HTMLElement | undefined {
+    if (select.id) {
+      const byContainerId = select.ownerDocument.getElementById(`select2-${select.id}-container`);
+
+      if (byContainerId instanceof HTMLElement) {
+        return byContainerId;
+      }
+    }
+
+    const container = this.findSelect2Container(select);
+    const rendered = container?.querySelector(".select2-selection__rendered, .select2-chosen");
+
+    if (rendered instanceof HTMLElement) {
+      return rendered;
+    }
+
+    return undefined;
+  }
+
+  private findSelect2Container(select: HTMLSelectElement): HTMLElement | undefined {
+    const candidates: Array<Element | null> = [
+      select.nextElementSibling,
+      select.previousElementSibling,
+      select.id ? select.ownerDocument.getElementById(`s2id_${select.id}`) : null,
+    ];
+
+    for (const candidate of candidates) {
+      if (
+        candidate instanceof HTMLElement
+        && (
+          candidate.classList.contains("select2")
+          || candidate.classList.contains("select2-container")
+        )
+      ) {
+        return candidate;
+      }
+    }
+
+    return undefined;
+  }
+
+  private tryClickVisibleChoice(document: Document, target: string): void {
+    const clickChoice = (): void => {
+      this.primeSearchInput(document, target);
+      this.clickVisibleChoice(document, [target]);
+    };
+
+    clickChoice();
+    window.setTimeout(clickChoice, 100);
+    window.setTimeout(clickChoice, 300);
+  }
+
+  private primeSearchInput(document: Document, target: string): void {
+    const searchInput = Array.from(
+      document.querySelectorAll(
+        ".select2-search__field, .select2-input, .select2-search input, [role='searchbox']",
+      ),
+    )
+      .find((element): element is HTMLInputElement =>
+        element instanceof HTMLInputElement && this.isVisible(element),
+      );
+
+    if (!searchInput) {
+      return;
+    }
+
+    searchInput.focus();
+    this.setNativeValue(searchInput, target);
+    searchInput.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      key: this.getLastCharacter(target),
+    }));
+    this.dispatchInputLikeEvents(searchInput);
+    searchInput.dispatchEvent(new KeyboardEvent("keyup", {
+      bubbles: true,
+      key: this.getLastCharacter(target),
+    }));
+  }
+
+  private clickVisibleChoice(document: Document, targets: string[]): boolean {
+    if (targets.length === 0) {
+      return false;
+    }
+
+    const targetChoices = targets.map((target) => this.toChoiceFingerprint(target));
+    const minimumScore = Math.max(
+      ...targetChoices.map((targetChoice) => this.getMinimumChoiceMatchScore(targetChoice)),
+    );
+    const candidates = Array.from(
+      document.querySelectorAll(
+        [
+          "[role='option']",
+          ".select2-results__option",
+          ".select2-result",
+          ".select2-result-label",
+          ".select2-results li",
+          "[data-option]",
+        ].join(","),
+      ),
+    )
+      .filter((element): element is HTMLElement => element instanceof HTMLElement)
+      .filter((element) => this.isVisible(element))
+      .filter((element) => !element.classList.contains("select2-disabled"))
+      .map((element) => ({
+        element,
+        score: Math.max(
+          ...targetChoices.map((targetChoice) =>
+            this.getChoiceMatchScore(
+              targetChoice,
+              this.toChoiceFingerprint(element.textContent ?? ""),
+            ),
+          ),
+        ),
+      }))
+      .sort((left, right) => right.score - left.score);
+
+    const best = candidates[0];
+
+    if (!best || best.score < minimumScore) {
+      return false;
+    }
+
+    this.activateElement(best.element);
+    return true;
+  }
+
+  private getLastCharacter(value: string): string {
+    return value.length > 0 ? value.slice(-1) : "";
+  }
+
+  private activateElement(element: HTMLElement): void {
+    for (const eventName of ["mousedown", "mouseup", "click"]) {
+      element.dispatchEvent(new MouseEvent(eventName, {
+        bubbles: true,
+        cancelable: true,
+        view: element.ownerDocument.defaultView,
+      }));
+    }
+  }
+
+  private isVisible(element: HTMLElement): boolean {
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+
+    if (!style || style.display === "none" || style.visibility === "hidden") {
+      return false;
+    }
+
+    return element.offsetParent !== null || style.position === "fixed";
+  }
+
+  private dispatchInputLikeEvents(element: HTMLElement): void {
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
   }
 }

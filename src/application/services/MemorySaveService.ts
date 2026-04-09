@@ -1,6 +1,7 @@
 import { AnswerType } from "../../domain/enums/AnswerType.js";
 import type { AnswerPayload } from "../../domain/models/AnswerPayload.js";
 import type { MemoryEntry } from "../../domain/models/MemoryEntry.js";
+import { isDateLikeText } from "../../shared/utils/dateFieldHeuristics.js";
 import { QuestionNormalizationService } from "./QuestionNormalizationService.js";
 
 export interface SaveMemoryInput {
@@ -50,6 +51,10 @@ export class MemorySaveService {
 
     if (!normalizedQuestionText) {
       throw new Error("Cannot save a memory without question text.");
+    }
+
+    if (isDateLikeText(input.questionText)) {
+      throw new Error("Date fields are ignored and are not saved as memories.");
     }
 
     if (answerType === AnswerType.Unknown) {

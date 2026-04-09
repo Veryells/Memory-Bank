@@ -136,9 +136,9 @@ export class ContentRuntime {
 
     if (matchOptions.length > 0) {
       return matchOptions.map((option, index) => ({
-        memoryId: option.memoryId,
         answer: option.answer,
         label: this.describeOptionLabel(option.answer, index),
+        ...(option.memoryId ? { memoryId: option.memoryId } : {}),
       }));
     }
 
@@ -148,9 +148,11 @@ export class ContentRuntime {
 
     return [
       {
-        memoryId: field.analysis.match.memoryId,
         answer: field.analysis.match.answer,
         label: this.describeOptionLabel(field.analysis.match.answer, 0),
+        ...(field.analysis.match.memoryId
+          ? { memoryId: field.analysis.match.memoryId }
+          : {}),
       },
     ];
   }

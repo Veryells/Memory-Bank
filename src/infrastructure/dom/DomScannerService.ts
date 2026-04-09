@@ -131,12 +131,30 @@ export class DomScannerService {
   }
 
   private buildFieldId(element: SupportedFormElement): string {
+    const automationId = element.getAttribute("data-automation-id");
+
+    if (automationId) {
+      return `automation:${automationId}`;
+    }
+
     if (element.id) {
       return `id:${element.id}`;
     }
 
     if ("name" in element && element.name) {
       return `name:${element.name}`;
+    }
+
+    const labelledBy = element.getAttribute("aria-labelledby");
+
+    if (labelledBy) {
+      return `aria:${labelledBy}`;
+    }
+
+    const placeholder = element.getAttribute("placeholder");
+
+    if (placeholder) {
+      return `placeholder:${placeholder.trim().toLowerCase()}`;
     }
 
     return `path:${this.buildDomPath(element)}`;

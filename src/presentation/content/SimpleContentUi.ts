@@ -30,9 +30,7 @@ export class SimpleContentUi {
           "Apply",
         );
       },
-      onAutoApplied: async (field) => {
-        this.showNoticeOverlay(field, "Saved answer applied.");
-      },
+      onAutoApplied: async () => undefined,
       onSaveCandidate: async (request) => this.showSaveOverlay(request),
       onAnalysisComplete: async (fields) => {
         const activeIds = new Set(fields.map((field) => field.binding.descriptor.fieldId));
@@ -69,9 +67,7 @@ export class SimpleContentUi {
       onClick: async () => {
         const applied = await request.apply(request.options.length > 0 ? option : undefined);
 
-        if (applied) {
-          this.showNoticeOverlay(request.field, "Saved answer applied.");
-        } else {
+        if (!applied) {
           this.showNoticeOverlay(request.field, "Could not apply saved answer.");
         }
       },

@@ -16,6 +16,12 @@ body {
   margin-top: 16px;
 }
 
+.memory-sidebar {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
 .panel {
   border: 1px solid #cbd5e1;
   border-radius: 12px;
@@ -58,6 +64,19 @@ body {
   color: #64748b;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pagination span {
+  color: #475569;
+  font-size: 13px;
+}
+
 .editor-form {
   display: grid;
 }
@@ -91,6 +110,19 @@ button {
 
 button:hover {
   background: #eef2ff;
+}
+
+.create-button {
+  display: block;
+  width: 100%;
+  background: #16a34a;
+  border-color: #16a34a;
+  color: white;
+}
+
+.create-button:hover {
+  background: #15803d;
+  border-color: #15803d;
 }
 
 button:disabled {

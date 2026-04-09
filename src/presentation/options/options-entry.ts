@@ -6,11 +6,21 @@ import type { UserSettings } from "../../domain/models/UserSettings.js";
 import { ChromeMessagingService } from "../../infrastructure/browser/ChromeMessagingService.js";
 import { getChromeApi } from "../../infrastructure/browser/getChromeApi.js";
 
+const MEMORIES_PER_PAGE = 12;
 const APPLY_MODE_ORDER: ApplyMode[] = [
   ApplyMode.SuggestOnly,
   ApplyMode.AskBeforeApply,
   ApplyMode.AutoApply,
 ];
+
+interface MemoryDraft {
+  questionText: string;
+  answerType: AnswerType;
+  answer: AnswerPayload;
+  enabled: boolean;
+  sourceHosts: string[];
+  tags: string[];
+}
 
 function requireElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -28,35 +38,38 @@ function cycleApplyMode(current: ApplyMode): ApplyMode {
   return APPLY_MODE_ORDER[nextIndex]!;
 }
 
-function answerPayloadToEditor(memory: MemoryEntry): {
+function answerPayloadToEditorValue(
+  answerType: AnswerType,
+  answer: AnswerPayload,
+): {
   answerType: AnswerType;
   textValue: string;
   booleanValue: boolean;
 } {
-  switch (memory.answerType) {
+  switch (answerType) {
     case AnswerType.Boolean:
       return {
         answerType: AnswerType.Boolean,
         textValue: "",
-        booleanValue: memory.answer.booleanValue ?? false,
+        booleanValue: answer.booleanValue ?? false,
       };
     case AnswerType.MultiSelect:
       return {
         answerType: AnswerType.MultiSelect,
-        textValue: (memory.answer.multiSelectValues ?? []).join("\n"),
+        textValue: (answer.multiSelectValues ?? []).join("\n"),
         booleanValue: false,
       };
     case AnswerType.SelectChoice:
       return {
         answerType: AnswerType.SelectChoice,
-        textValue: memory.answer.selectValue ?? "",
+        textValue: answer.selectValue ?? "",
         booleanValue: false,
       };
     case AnswerType.Text:
     default:
       return {
         answerType: AnswerType.Text,
-        textValue: memory.answer.textValue ?? "",
+        textValue: answer.textValue ?? "",
         booleanValue: false,
       };
   }
@@ -87,9 +100,14 @@ async function main(): Promise<void> {
   const statusElement = requireElement<HTMLParagraphElement>("dashboard-status");
   const settingsButton = requireElement<HTMLButtonElement>("toggle-settings");
   const modeButton = requireElement<HTMLButtonElement>("cycle-settings-mode");
+  const createButton = requireElement<HTMLButtonElement>("create-memory");
   const searchInput = requireElement<HTMLInputElement>("memory-search");
   const memoryList = requireElement<HTMLDivElement>("memory-list");
   const emptyState = requireElement<HTMLParagraphElement>("memory-empty");
+  const pagination = requireElement<HTMLDivElement>("memory-pagination");
+  const paginationPrevButton = requireElement<HTMLButtonElement>("memory-page-prev");
+  const paginationNextButton = requireElement<HTMLButtonElement>("memory-page-next");
+  const paginationStatus = requireElement<HTMLSpanElement>("memory-page-status");
   const form = requireElement<HTMLFormElement>("memory-form");
   const questionInput = requireElement<HTMLInputElement>("memory-question");
   const answerTypeSelect = requireElement<HTMLSelectElement>("memory-answer-type");
@@ -104,6 +122,13 @@ async function main(): Promise<void> {
   let settings: UserSettings = (await messaging.send("loadSettings", {})).settings;
   let memories: MemoryEntry[] = (await messaging.send("fetchMemories", { query: "" })).memories;
   let selectedMemoryId: string | null = memories[0]?.id ?? null;
+  let currentPage = 1;
+  let draft: MemoryDraft | null = null;
+
+  const getFilteredMemories = (): MemoryEntry[] =>
+    memories.filter((memory) =>
+      memory.questionText.toLowerCase().includes(searchInput.value.trim().toLowerCase()),
+    );
 
   const renderSettings = (): void => {
     statusElement.textContent = settings.isEnabled
@@ -118,19 +143,26 @@ async function main(): Promise<void> {
 
   const renderMemoryList = (): void => {
     memoryList.innerHTML = "";
-
-    const filtered = memories.filter((memory) =>
-      memory.questionText.toLowerCase().includes(searchInput.value.trim().toLowerCase()),
-    );
+    const filtered = getFilteredMemories();
+    const totalPages = Math.max(1, Math.ceil(filtered.length / MEMORIES_PER_PAGE));
+    currentPage = Math.min(currentPage, totalPages);
+    currentPage = Math.max(1, currentPage);
+    const startIndex = (currentPage - 1) * MEMORIES_PER_PAGE;
+    const pageItems = filtered.slice(startIndex, startIndex + MEMORIES_PER_PAGE);
 
     emptyState.hidden = filtered.length > 0;
+    pagination.hidden = filtered.length <= MEMORIES_PER_PAGE;
+    paginationStatus.textContent = `Page ${currentPage} of ${totalPages}`;
+    paginationPrevButton.disabled = currentPage <= 1;
+    paginationNextButton.disabled = currentPage >= totalPages;
 
-    for (const memory of filtered) {
+    for (const memory of pageItems) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = memory.id === selectedMemoryId ? "memory-list-item active" : "memory-list-item";
       button.textContent = memory.questionText;
       button.addEventListener("click", () => {
+        draft = null;
         selectedMemoryId = memory.id;
         renderMemoryList();
         renderEditor();
@@ -142,6 +174,22 @@ async function main(): Promise<void> {
   const renderEditor = (): void => {
     const selectedMemory = memories.find((memory) => memory.id === selectedMemoryId);
 
+    if (!selectedMemory && draft) {
+      const editorState = answerPayloadToEditorValue(draft.answerType, draft.answer);
+      questionInput.value = draft.questionText;
+      answerTypeSelect.value = editorState.answerType;
+      answerText.value = editorState.textValue;
+      answerBoolean.checked = editorState.booleanValue;
+      enabledInput.checked = draft.enabled;
+      hostsInput.value = draft.sourceHosts.join(", ");
+      tagsInput.value = draft.tags.join(", ");
+      saveButton.disabled = false;
+      deleteButton.disabled = false;
+      deleteButton.textContent = "Cancel";
+      updateAnswerInputs();
+      return;
+    }
+
     if (!selectedMemory) {
       questionInput.value = "";
       answerTypeSelect.value = AnswerType.Text;
@@ -152,11 +200,15 @@ async function main(): Promise<void> {
       tagsInput.value = "";
       saveButton.disabled = true;
       deleteButton.disabled = true;
+      deleteButton.textContent = "Delete Memory";
       updateAnswerInputs();
       return;
     }
 
-    const editorState = answerPayloadToEditor(selectedMemory);
+    const editorState = answerPayloadToEditorValue(
+      selectedMemory.answerType,
+      selectedMemory.answer,
+    );
     questionInput.value = selectedMemory.questionText;
     answerTypeSelect.value = editorState.answerType;
     answerText.value = editorState.textValue;
@@ -166,6 +218,7 @@ async function main(): Promise<void> {
     tagsInput.value = selectedMemory.tags.join(", ");
     saveButton.disabled = false;
     deleteButton.disabled = false;
+    deleteButton.textContent = "Delete Memory";
     updateAnswerInputs();
   };
 
@@ -200,6 +253,33 @@ async function main(): Promise<void> {
   });
 
   searchInput.addEventListener("input", () => {
+    currentPage = 1;
+    renderMemoryList();
+  });
+
+  createButton.addEventListener("click", () => {
+    draft = {
+      questionText: "",
+      answerType: AnswerType.Text,
+      answer: { textValue: "" },
+      enabled: true,
+      sourceHosts: [],
+      tags: [],
+    };
+    selectedMemoryId = null;
+    renderMemoryList();
+    renderEditor();
+    questionInput.focus();
+  });
+
+  paginationPrevButton.addEventListener("click", () => {
+    currentPage = Math.max(1, currentPage - 1);
+    renderMemoryList();
+  });
+
+  paginationNextButton.addEventListener("click", () => {
+    const totalPages = Math.max(1, Math.ceil(getFilteredMemories().length / MEMORIES_PER_PAGE));
+    currentPage = Math.min(totalPages, currentPage + 1);
     renderMemoryList();
   });
 
@@ -211,6 +291,38 @@ async function main(): Promise<void> {
     event.preventDefault();
 
     const selectedMemory = memories.find((memory) => memory.id === selectedMemoryId);
+    const answerType = answerTypeSelect.value as AnswerType;
+    const answer = editorToAnswerPayload(
+      answerType,
+      answerText.value,
+      answerBoolean.checked,
+    );
+    const hosts = hostsInput.value
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const tags = tagsInput.value
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (!selectedMemory && draft) {
+      const response = await messaging.send("saveMemory", {
+        questionText: questionInput.value.trim(),
+        answer,
+        hostName: hosts[0] ?? "manual",
+        tags,
+      });
+
+      const savedMemory = response.memory;
+      memories = [savedMemory, ...memories.filter((memory) => memory.id !== savedMemory.id)];
+      draft = null;
+      selectedMemoryId = savedMemory.id;
+      currentPage = 1;
+      renderMemoryList();
+      renderEditor();
+      return;
+    }
 
     if (!selectedMemory) {
       return;
@@ -219,21 +331,11 @@ async function main(): Promise<void> {
     const updatedMemory: MemoryEntry = {
       ...selectedMemory,
       questionText: questionInput.value.trim(),
-      answerType: answerTypeSelect.value as AnswerType,
-      answer: editorToAnswerPayload(
-        answerTypeSelect.value as AnswerType,
-        answerText.value,
-        answerBoolean.checked,
-      ),
+      answerType,
+      answer,
       enabled: enabledInput.checked,
-      sourceHosts: hostsInput.value
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
-      tags: tagsInput.value
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
+      sourceHosts: hosts,
+      tags,
     };
 
     const response = await messaging.send("updateMemory", {
@@ -248,6 +350,14 @@ async function main(): Promise<void> {
   });
 
   deleteButton.addEventListener("click", async () => {
+    if (draft) {
+      draft = null;
+      selectedMemoryId = memories[0]?.id ?? null;
+      renderMemoryList();
+      renderEditor();
+      return;
+    }
+
     if (!selectedMemoryId) {
       return;
     }
@@ -258,6 +368,7 @@ async function main(): Promise<void> {
 
     memories = memories.filter((memory) => memory.id !== selectedMemoryId);
     selectedMemoryId = memories[0]?.id ?? null;
+    currentPage = 1;
     renderMemoryList();
     renderEditor();
   });

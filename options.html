@@ -18,13 +18,21 @@
       </section>
 
       <section class="dashboard-grid">
-        <aside class="panel">
+        <aside class="memory-sidebar">
+          <button id="create-memory" type="button" class="create-button">Create</button>
+          <section class="panel">
           <label class="field">
             <span>Search Memories</span>
             <input id="memory-search" type="search" placeholder="Search by question" />
           </label>
           <div id="memory-list" class="memory-list"></div>
           <p id="memory-empty" class="empty-state" hidden>No memories match your search.</p>
+          <div id="memory-pagination" class="pagination" hidden>
+            <button id="memory-page-prev" type="button">Previous</button>
+            <span id="memory-page-status">Page 1 of 1</span>
+            <button id="memory-page-next" type="button">Next</button>
+          </div>
+          </section>
         </aside>
 
         <section class="panel">

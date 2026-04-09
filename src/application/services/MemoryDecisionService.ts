@@ -32,6 +32,27 @@ export class MemoryDecisionService {
       };
     }
 
+    if (this.isBlankAnswer(match)) {
+      return {
+        action: "none",
+        reason: "The matched memory has no meaningful answer to apply.",
+      };
+    }
+
+    if (this.isUncheckedBoolean(match)) {
+      return {
+        action: "none",
+        reason: "A saved unchecked checkbox does not need to be applied.",
+      };
+    }
+
+    if (this.isCheckedBoolean(match)) {
+      return {
+        action: "autoApply",
+        reason: "A saved checked checkbox is applied automatically.",
+      };
+    }
+
     switch (settings.applyMode) {
       case ApplyMode.Disabled:
         return {
@@ -79,6 +100,41 @@ export class MemoryDecisionService {
     match: MatchResult,
     settings: Pick<EffectivePageSettings, "isEnabled" | "showInlineIndicators">,
   ): boolean {
-    return settings.isEnabled && settings.showInlineIndicators && match.confidenceLevel !== ConfidenceLevel.None;
+    return settings.isEnabled
+      && settings.showInlineIndicators
+      && match.confidenceLevel !== ConfidenceLevel.None
+      && !this.isBlankAnswer(match)
+      && !this.isUncheckedBoolean(match)
+      && !this.isCheckedBoolean(match);
+  }
+
+  private isBlankAnswer(match: MatchResult): boolean {
+    const answer = match.answer;
+
+    if (!answer) {
+      return true;
+    }
+
+    if (typeof answer.booleanValue === "boolean") {
+      return false;
+    }
+
+    if (typeof answer.textValue === "string" && answer.textValue.trim().length > 0) {
+      return false;
+    }
+
+    if (typeof answer.selectValue === "string" && answer.selectValue.trim().length > 0) {
+      return false;
+    }
+
+    return !(Array.isArray(answer.multiSelectValues) && answer.multiSelectValues.length > 0);
+  }
+
+  private isUncheckedBoolean(match: MatchResult): boolean {
+    return match.answer?.booleanValue === false;
+  }
+
+  private isCheckedBoolean(match: MatchResult): boolean {
+    return match.answer?.booleanValue === true && (match.options?.length ?? 0) <= 1;
   }
 }

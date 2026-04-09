@@ -49,6 +49,13 @@ export class MemoryDecisionService {
           reason: "AskBeforeApply mode requires user confirmation.",
         };
       case ApplyMode.AutoApply:
+        if ((match.options?.length ?? 0) > 1) {
+          return {
+            action: "prompt",
+            reason: "Multiple saved answers were found, so user selection is required.",
+          };
+        }
+
         if (match.confidenceScore >= settings.autoApplyConfidenceThreshold) {
           return {
             action: "autoApply",

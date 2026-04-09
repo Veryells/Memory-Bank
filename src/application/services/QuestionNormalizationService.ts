@@ -38,7 +38,7 @@ const STOP_WORDS = new Set([
 
 export class QuestionNormalizationService {
   normalizeQuestionText(text: string): string {
-    return text
+    return this.applyDomainAliases(text)
       .normalize("NFKD")
       .toLowerCase()
       .replace(/[\u0300-\u036f]/g, "")
@@ -85,5 +85,20 @@ export class QuestionNormalizationService {
       ...(sectionText ? { sectionText } : {}),
       ...(optionTexts && optionTexts.length > 0 ? { optionTexts } : {}),
     };
+  }
+
+  private applyDomainAliases(text: string): string {
+    return text
+      .replace(/race\s*\/\s*ethnicity/gi, "ethnicity")
+      .replace(/ethnicity\s*\/\s*race/gi, "ethnicity")
+      .replace(/ethnic origin/gi, "ethnicity")
+      .replace(/preferred first name/gi, "preferred name")
+      .replace(/first name \(preferred\)/gi, "preferred name")
+      .replace(/preferred given name/gi, "preferred name")
+      .replace(/given name/gi, "first name")
+      .replace(/state\s*\/\s*province/gi, "state")
+      .replace(/province\s*\/\s*state/gi, "state")
+      .replace(/state\s*\/\s*region/gi, "state")
+      .replace(/region\s*\/\s*state/gi, "state");
   }
 }

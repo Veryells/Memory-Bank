@@ -12,6 +12,13 @@ export class DomEventDispatcherService {
     for (const element of targetElements) {
       element.dispatchEvent(new Event("input", { bubbles: true }));
       element.dispatchEvent(new Event("change", { bubbles: true }));
+
+      if (
+        binding.fieldType === FieldType.Select
+        && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)
+      ) {
+        element.dispatchEvent(new Event("blur", { bubbles: true }));
+      }
     }
   }
 }

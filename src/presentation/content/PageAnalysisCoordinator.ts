@@ -11,7 +11,7 @@ export class PageAnalysisCoordinator {
   async analyze(root: Document | HTMLElement = document): Promise<AnalyzedContentField[]> {
     const bindings = this.scannerService.scan(root);
 
-    return Promise.all(
+    const results = await Promise.allSettled(
       bindings.map(async (binding) => ({
         binding,
         analysis: await this.backgroundMessageClient.send("analyzeField", {
@@ -19,5 +19,14 @@ export class PageAnalysisCoordinator {
         }),
       })),
     );
+
+    return results.flatMap((result) => {
+      if (result.status === "fulfilled") {
+        return [result.value];
+      }
+
+      console.warn("MemoryBank could not analyze one field", result.reason);
+      return [];
+    });
   }
 }

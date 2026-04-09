@@ -6,8 +6,10 @@ import { DomScannerService } from "../../infrastructure/dom/DomScannerService.js
 import { MutationObserverService, type MutationObservationHandle } from "../../infrastructure/dom/MutationObserverService.js";
 import { FieldInteractionCoordinator } from "./FieldInteractionCoordinator.js";
 import { PageAnalysisCoordinator } from "./PageAnalysisCoordinator.js";
+import type { AnswerPayload } from "../../domain/models/AnswerPayload.js";
 import type {
   AnalyzedContentField,
+  ContentActionOption,
   ContentActionRequest,
   ContentRuntimeCallbacks,
   ContentRuntimeHandle,
@@ -91,10 +93,13 @@ export class ContentRuntime {
     }
 
     this.announcedActionKeys.set(field.binding.descriptor.fieldId, actionKey);
+    const options = this.buildActionOptions(field);
 
     const request: ContentActionRequest = {
       field,
-      apply: async () => this.dependencies.fieldInteractionCoordinator.applyMemory(field),
+      options,
+      apply: async (option?: ContentActionOption) =>
+        this.dependencies.fieldInteractionCoordinator.applyOption(field, option),
     };
 
     switch (field.analysis.decision.action) {
@@ -124,6 +129,47 @@ export class ContentRuntime {
       field.analysis.match.memoryId ?? "none",
       field.analysis.match.confidenceScore.toString(),
     ].join(":");
+  }
+
+  private buildActionOptions(field: AnalyzedContentField): ContentActionOption[] {
+    const matchOptions = field.analysis.match.options ?? [];
+
+    if (matchOptions.length > 0) {
+      return matchOptions.map((option, index) => ({
+        memoryId: option.memoryId,
+        answer: option.answer,
+        label: this.describeOptionLabel(option.answer, index),
+      }));
+    }
+
+    if (!field.analysis.match.answer) {
+      return [];
+    }
+
+    return [
+      {
+        memoryId: field.analysis.match.memoryId,
+        answer: field.analysis.match.answer,
+        label: this.describeOptionLabel(field.analysis.match.answer, 0),
+      },
+    ];
+  }
+
+  private describeOptionLabel(answer: AnswerPayload, index: number): string {
+    const rawValue = answer.selectValue
+      ?? answer.textValue
+      ?? answer.multiSelectValues?.join(", ")
+      ?? (typeof answer.booleanValue === "boolean"
+        ? answer.booleanValue ? "Yes" : "No"
+        : "");
+
+    const compact = rawValue.trim();
+
+    if (!compact) {
+      return `Option ${index + 1}`;
+    }
+
+    return compact.length <= 24 ? compact : `${compact.slice(0, 21)}...`;
   }
 
   private resetSaveListeners(): void {

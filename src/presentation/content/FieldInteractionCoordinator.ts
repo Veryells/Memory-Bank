@@ -7,6 +7,7 @@ import { DomFieldWriterService } from "../../infrastructure/dom/DomFieldWriterSe
 import type { ScannedFieldBinding } from "../../infrastructure/dom/types.js";
 import type {
   AnalyzedContentField,
+  ContentActionOption,
   ContentRuntimeCallbacks,
   SaveCandidateRequest,
 } from "./types.js";
@@ -28,6 +29,19 @@ export class FieldInteractionCoordinator {
     "confirm password",
   ];
 
+  private static readonly blockedSearchTerms = [
+    "search",
+    "search term",
+    "search query",
+    "site search",
+    "keyword",
+    "keywords",
+    "find",
+    "lookup",
+    "filter",
+    "query",
+  ];
+
   constructor(
     private readonly fieldWriterService: DomFieldWriterService,
     private readonly eventDispatcherService: DomEventDispatcherService,
@@ -35,7 +49,14 @@ export class FieldInteractionCoordinator {
   ) {}
 
   async applyMemory(field: AnalyzedContentField): Promise<boolean> {
-    const answer = field.analysis.match.answer;
+    return this.applyOption(field);
+  }
+
+  async applyOption(
+    field: AnalyzedContentField,
+    option?: Pick<ContentActionOption, "answer" | "memoryId">,
+  ): Promise<boolean> {
+    const answer = option?.answer ?? field.analysis.match.answer;
 
     if (!answer) {
       return false;
@@ -49,9 +70,11 @@ export class FieldInteractionCoordinator {
 
     this.eventDispatcherService.dispatchAfterWrite(field.binding);
 
-    if (field.analysis.match.memoryId) {
+    const memoryId = option?.memoryId ?? field.analysis.match.memoryId;
+
+    if (memoryId) {
       await this.backgroundMessageClient.send("recordMemoryUsage", {
-        memoryId: field.analysis.match.memoryId,
+        memoryId,
       });
     }
 
@@ -170,11 +193,20 @@ export class FieldInteractionCoordinator {
           if (binding.primaryElement.multiple) {
             return {
               multiSelectValues: Array.from(binding.primaryElement.selectedOptions).map(
-                (option) => option.value,
+                (option) => option.textContent?.trim() || option.value,
               ),
             };
           }
 
+          const selectedOption = binding.primaryElement.selectedOptions[0];
+          return {
+            selectValue: selectedOption?.textContent?.trim() || binding.primaryElement.value,
+          };
+        }
+        if (
+          binding.primaryElement instanceof HTMLInputElement
+          || binding.primaryElement instanceof HTMLTextAreaElement
+        ) {
           return { selectValue: binding.primaryElement.value };
         }
         break;
@@ -189,7 +221,8 @@ export class FieldInteractionCoordinator {
         );
 
         if (selected instanceof HTMLInputElement) {
-          return { selectValue: selected.value };
+          const selectedLabel = selected.labels?.[0]?.textContent?.trim();
+          return { selectValue: selectedLabel || selected.value };
         }
         break;
       }
@@ -227,7 +260,12 @@ export class FieldInteractionCoordinator {
       return true;
     }
 
+    if (primaryElement instanceof HTMLInputElement && primaryElement.type === "search") {
+      return true;
+    }
+
     const autocomplete = this.normalizeText(primaryElement.getAttribute("autocomplete"));
+    const role = this.normalizeText(primaryElement.getAttribute("role"));
 
     if (
       autocomplete
@@ -235,6 +273,10 @@ export class FieldInteractionCoordinator {
         autocomplete.includes(value),
       )
     ) {
+      return true;
+    }
+
+    if (autocomplete?.includes("search") || role === "searchbox") {
       return true;
     }
 
@@ -248,8 +290,18 @@ export class FieldInteractionCoordinator {
       .map((value) => this.normalizeText(value))
       .filter((value): value is string => Boolean(value));
 
+    if (
+      signals.some((value) =>
+        FieldInteractionCoordinator.blockedCredentialTerms.some((term) =>
+          value.includes(term),
+        ),
+      )
+    ) {
+      return true;
+    }
+
     return signals.some((value) =>
-      FieldInteractionCoordinator.blockedCredentialTerms.some((term) =>
+      FieldInteractionCoordinator.blockedSearchTerms.some((term) =>
         value.includes(term),
       ),
     );

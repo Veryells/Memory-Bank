@@ -58,7 +58,8 @@ export class MemorySaveService {
 
     const duplicate = existingMemories.find((memory) =>
       memory.normalizedQuestionText === normalizedQuestionText &&
-      memory.answerType === answerType,
+      memory.answerType === answerType &&
+      this.serializeAnswer(memory.answer) === this.serializeAnswer(input.answer),
     );
 
     if (duplicate) {
@@ -121,5 +122,14 @@ export class MemorySaveService {
 
   private mergeUniqueStrings(existing: string[], incoming: string[]): string[] {
     return [...new Set([...existing, ...incoming.map((value) => value.trim()).filter(Boolean)])];
+  }
+
+  private serializeAnswer(answer: AnswerPayload): string {
+    return JSON.stringify({
+      textValue: answer.textValue?.trim() || undefined,
+      booleanValue: answer.booleanValue,
+      selectValue: answer.selectValue?.trim() || undefined,
+      multiSelectValues: answer.multiSelectValues?.map((value) => value.trim()) ?? undefined,
+    });
   }
 }

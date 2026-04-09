@@ -8,9 +8,16 @@ export interface AnalyzedContentField {
   analysis: FieldAnalysisResult;
 }
 
+export interface ContentActionOption {
+  memoryId?: string;
+  label: string;
+  answer: AnswerPayload;
+}
+
 export interface ContentActionRequest {
   field: AnalyzedContentField;
-  apply(): Promise<boolean>;
+  options: ContentActionOption[];
+  apply(option?: ContentActionOption): Promise<boolean>;
 }
 
 export interface SaveCandidateRequest {

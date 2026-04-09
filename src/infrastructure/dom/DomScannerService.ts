@@ -89,6 +89,21 @@ export class DomScannerService {
         return FieldType.Unknown;
       }
 
+      if (element.type === "search") {
+        return FieldType.Unknown;
+      }
+
+      const role = element.getAttribute("role")?.toLowerCase().trim();
+      const hasPopup = element.getAttribute("aria-haspopup")?.toLowerCase().trim();
+
+      if (
+        role === "combobox"
+        || hasPopup === "listbox"
+        || hasPopup === "menu"
+      ) {
+        return FieldType.Select;
+      }
+
       switch (element.type) {
         case "checkbox":
           return FieldType.Checkbox;

@@ -1,5 +1,6 @@
 import type {
   AnalyzedContentField,
+  ContentActionOption,
   ContentActionRequest,
   ContentRuntimeCallbacks,
   SaveCandidateRequest,
@@ -56,23 +57,31 @@ export class SimpleContentUi {
     message: string,
     primaryLabel: string,
   ): void {
+    const optionSource: ContentActionOption[] = request.options.length > 0
+      ? request.options.slice(0, 3)
+      : [{ label: primaryLabel, answer: {} }];
+
+    const optionButtons = optionSource.map((option, index) => ({
+      label: request.options.length > 1
+        ? `${index + 1}. ${option.label}`
+        : primaryLabel,
+      emphasis: index === 0,
+      onClick: async () => {
+        const applied = await request.apply(request.options.length > 0 ? option : undefined);
+
+        if (applied) {
+          this.showNoticeOverlay(request.field, "Saved answer applied.");
+        } else {
+          this.showNoticeOverlay(request.field, "Could not apply saved answer.");
+        }
+      },
+    }));
+
     const overlay = this.createOverlay(
       request.field,
-      message,
+      request.options.length > 1 ? `${message} Choose one:` : message,
       [
-        {
-          label: primaryLabel,
-          emphasis: true,
-          onClick: async () => {
-            const applied = await request.apply();
-
-            if (applied) {
-              this.showNoticeOverlay(request.field, "Saved answer applied.");
-            } else {
-              this.showNoticeOverlay(request.field, "Could not apply saved answer.");
-            }
-          },
-        },
+        ...optionButtons,
         {
           label: "Dismiss",
           onClick: () => undefined,

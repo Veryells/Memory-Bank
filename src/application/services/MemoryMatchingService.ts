@@ -1,7 +1,7 @@
 import { AnswerType } from "../../domain/enums/AnswerType.js";
 import { ConfidenceLevel } from "../../domain/enums/ConfidenceLevel.js";
 import { FieldType } from "../../domain/enums/FieldType.js";
-import type { MatchResult } from "../../domain/models/MatchResult.js";
+import type { MatchResult, MatchedMemoryOption } from "../../domain/models/MatchResult.js";
 import type { MemoryEntry } from "../../domain/models/MemoryEntry.js";
 import type { QuestionSignature } from "../../domain/models/QuestionSignature.js";
 
@@ -22,6 +22,7 @@ export class MemoryMatchingService {
       .sort((left, right) => right.score - left.score);
 
     const best = candidates[0];
+    const presentedOptions = this.selectPresentedOptions(candidates, best);
 
     if (!best || best.score < this.minimumMatchScore) {
       return {
@@ -30,6 +31,7 @@ export class MemoryMatchingService {
         confidenceLevel: ConfidenceLevel.None,
         reason: "No memory crossed the minimum confidence threshold.",
         alternateMemoryIds: candidates.slice(0, 3).map((candidate) => candidate.memory.id),
+        options: presentedOptions.map((candidate) => this.toMatchedMemoryOption(candidate)),
       };
     }
 
@@ -44,6 +46,7 @@ export class MemoryMatchingService {
       alternateMemoryIds: candidates
         .slice(1, 4)
         .map((candidate) => candidate.memory.id),
+      options: presentedOptions.map((candidate) => this.toMatchedMemoryOption(candidate)),
     };
   }
 
@@ -108,7 +111,7 @@ export class MemoryMatchingService {
           return 1;
         }
 
-        return answerType === AnswerType.Text ? 0.7 : 0;
+        return answerType === AnswerType.Text ? 0.85 : 0;
       case FieldType.Checkbox:
         return answerType === AnswerType.Boolean ? 1 : 0;
       case FieldType.Radio:
@@ -116,11 +119,43 @@ export class MemoryMatchingService {
           return 1;
         }
 
-        return answerType === AnswerType.Text ? 0.6 : 0;
+        return answerType === AnswerType.Text ? 0.85 : 0;
       case FieldType.Unknown:
       default:
         return 0.85;
     }
+  }
+
+  private toMatchedMemoryOption(candidate: ScoredCandidate): MatchedMemoryOption {
+    return {
+      memoryId: candidate.memory.id,
+      questionText: candidate.memory.questionText,
+      answer: candidate.memory.answer,
+      confidenceScore: this.roundScore(candidate.score),
+      confidenceLevel: this.getConfidenceLevel(candidate.score),
+      reason: candidate.reason,
+    };
+  }
+
+  private selectPresentedOptions(
+    candidates: ScoredCandidate[],
+    best: ScoredCandidate | undefined,
+  ): ScoredCandidate[] {
+    if (!best) {
+      return candidates
+        .filter((candidate) => candidate.score >= this.minimumMatchScore)
+        .slice(0, 4);
+    }
+
+    return candidates
+      .filter((candidate) =>
+        candidate.score >= this.minimumMatchScore
+        && (
+          candidate.memory.normalizedQuestionText === best.memory.normalizedQuestionText
+          || best.score - candidate.score <= 0.05
+        ),
+      )
+      .slice(0, 4);
   }
 
   private getStringSimilarity(left: string, right: string): number {
